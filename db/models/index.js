@@ -1,3 +1,3 @@
-const TokenStore = require('./TokenStore');
+const TokenStore = require("./TokenStore");
 
 module.exports = { TokenStore };

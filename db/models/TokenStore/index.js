@@ -1,1 +1,1 @@
-module.exports = require('./TokenStore');
+module.exports = require("./TokenStore");

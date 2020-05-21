@@ -1,18 +1,20 @@
-const jwt = require('jsonwebtoken');
-const cryptoRandomString = require('crypto-random-string');
+const jwt = require("jsonwebtoken");
+const cryptoRandomString = require("crypto-random-string");
 
-require('dotenv').config();
+require("dotenv").config();
 
 const { JWT_SECRET_KEY } = process.env;
 
 const generateSystemAuthToken = async (tokenCacheManager) => {
-	const sysAuthToken = "SYS" + cryptoRandomString({length: 10, type: 'base64'});
+	const sysAuthToken =
+		"SYS" + cryptoRandomString({ length: 10, type: "base64" });
 	const payload = { access_type: "SYSTEM" };
 
-	const {
-		cacheError,
-		status
-	} = await tokenCacheManager.setKey(sysAuthToken, payload,  60 * 60);
+	const { cacheError, status } = await tokenCacheManager.setKey(
+		sysAuthToken,
+		payload,
+		60 * 60
+	);
 
 	if (cacheError || status !== "OK") {
 		console.trace(cacheError, status);
@@ -20,44 +22,38 @@ const generateSystemAuthToken = async (tokenCacheManager) => {
 	}
 
 	return sysAuthToken;
-}
-
+};
 
 const generateUserTokens = (user, options) => {
-
 	// Produce tokens from user record.
 
 	const { access_level, _id } = user;
-	const { 
+	const {
 		// Default to 1 Hour.
-		accessTokenExpiresIn = 60 * 60, 
+		accessTokenExpiresIn = 60 * 60,
 		// Default to 1 Week.
 		refreshTokenExpiresIn = 60 * 60 * 24 * 7
 	} = options;
 
 	const accessTokenPayload = {
 		access_type: "USER",
-		authenticated_user: { access_level, _id } 
-	}; 
+		authenticated_user: { access_level, _id }
+	};
 
-	const accessToken = jwt.sign
-		(accessTokenPayload, 
-		JWT_SECRET_KEY, 
-		{ expiresIn: accessTokenExpiresIn}
-	);
+	const accessToken = jwt.sign(accessTokenPayload, JWT_SECRET_KEY, {
+		expiresIn: accessTokenExpiresIn
+	});
 
 	const refreshTokenPayload = { _id };
 
-	const refreshToken = jwt.sign(
-		refreshTokenPayload, 
-		JWT_SECRET_KEY, 
-		{ expiresIn: refreshTokenExpiresIn }
-	);
+	const refreshToken = jwt.sign(refreshTokenPayload, JWT_SECRET_KEY, {
+		expiresIn: refreshTokenExpiresIn
+	});
 
 	const accessTokenDecoded = jwt.verify(accessToken, JWT_SECRET_KEY);
 	const refreshTokenDecoded = jwt.verify(refreshToken, JWT_SECRET_KEY);
 
-	return ({
+	return {
 		accessToken: {
 			token: accessToken,
 			payload: accessTokenPayload,
@@ -72,7 +68,7 @@ const generateUserTokens = (user, options) => {
 			expDate: new Date(refreshTokenDecoded.exp * 1000),
 			iat: refreshTokenDecoded.iat
 		}
-	})
-}
+	};
+};
 
-module.exports = { generateSystemAuthToken, generateUserTokens }
+module.exports = { generateSystemAuthToken, generateUserTokens };
