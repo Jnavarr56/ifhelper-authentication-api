@@ -13,71 +13,38 @@ const useragent = require('express-useragent');
 const bearerToken = require('express-bearer-token');
 const cryptoRandomString = require('crypto-random-string');
 
+
+
 const { TokenStore } = require('./db/models');
+const RedisCacheManager = require('./utils/RedisCacheManager');
+const { generateUserTokens } = require('./utils/tokens');
+const { validateRefreshTokenCookie } = require('./utils/cookie');
+const { 
+	fetchUserByEmail, 
+	fetchUserById, 
+	createUser, 
+	verifyUserPassword 
+} = require('./utils/user');
+
 
 require('dotenv').config();
 
 const PORT = process.env.PORT || 3000;
 const REDIS_PORT = process.env.REDIS_PORT || 6379;
 
-const REFRESH_TOKEN_COOKIE_NAME = process.env.REFRESH_TOKEN_COOKIE_NAME;
-
-const USERS_API = "http://localhost:4000/users";
+const { REFRESH_TOKEN_COOKIE_NAME, JWT_SECRET_KEY } = process.env;
 
 const MONGO_DB_URL = "mongodb://127.0.0.1:27017";
 
-const JWT_SECRET_KEY = process.env.JWT_SECRET_KEY;
-
-const userAuthTokenCache = redis.createClient({
+const tokenCache = new RedisCacheManager({
 	port: REDIS_PORT,
-	prefix: 'USER_AUTHENTICATION'
+	prefix: 'AUTHENTICATION_TOKENS'
 });
 
-const setInUserAuthTokenCache = (accessToken, payload, secs) => {
-    return new Promise((resolve) => {
-        userAuthTokenCache.set(
-            accessToken, 
-            JSON.stringify(payload), 
-            'EX', 
-            secs, 
-            (cacheError, status) => resolve({ cacheError, status })
-        );         
-    });
-};
-
-const checkUserAuthTokenCache = (accessToken) => {
-    return new Promise((resolve) => {
-        userAuthTokenCache.get(accessToken, (cacheError, cachedVal) => {
-            resolve({ cacheError, cachedVal: JSON.parse(cachedVal) });
-        });        
-    });
-};
-
-const userAuthTokenBlacklistCache = redis.createClient({
+const tokenBlacklistCache = new RedisCacheManager({
 	port: REDIS_PORT,
-	prefix: 'USER_AUTHENTICATION_BLACKLIST'
+	prefix: 'AUTHENTICATION_TOKENS_BLACKLIST'
 });
-
-const setInUserAuthTokenBlacklistCache = (accessToken, payload, secs) => {
-    return new Promise((resolve) => {
-        userAuthTokenBlacklistCache.set(
-            accessToken, 
-            JSON.stringify(payload), 
-            'EX', 
-            secs, 
-            (cacheError, status) => resolve({ cacheError, status })
-        );         
-    });
-};
-
-const checkUserAuthTokenBlacklistCache = (accessToken) => {
-    return new Promise((resolve) => {
-        userAuthTokenBlacklistCache.get(accessToken, (cacheError, cachedVal) => {
-            resolve({ cacheError, cachedVal: JSON.parse(cachedVal) });
-        });        
-    });
-};
-
 
 
 const app = express();
@@ -91,195 +58,6 @@ app
 	.use(cookieParser())
 	.use(morgan("dev"));
 
-
-const generateSystemAuthToken = async () => {
-	const sysAuthToken = "SYS" + cryptoRandomString({length: 10, type: 'base64'});
-	const payload = { access_type: "SYSTEM" };
-
-	const {
-		cacheError,
-		status
-	} = await setInUserAuthTokenCache(sysAuthToken, payload,  60 * 60);
-
-	if (cacheError || status !== "OK") {
-		console.trace(cacheError, status);
-		throw new Error(cacheError);
-	}
-
-	return sysAuthToken;
-}
-
-const fetchUserByEmail = async (email) => {
-	// Fetch user by email. 
-	
-	// If no user  with email return null.
-	// If error then return formatted data object.
-
-	const token = await generateSystemAuthToken();
-	const headers = {
-		Authorization: `Bearer ${token}`
-	} 
-	
-	console.log({ headers });
-
-	const APIQueryURL = `${USERS_API}?email=${email}&limit=1`;
-
-	return axios.get(APIQueryURL, { headers })
-		.then(({ data }) => ({ user: data.query_results[0] || null }))
-		.catch(({ response: { data, status } }) => ({
-			error: { data, status, error_code: "PROBLEM RETRIEVING USER" }
-		}));
-}
-
-const fetchUserById = async (id) => {
-	// Fetch user by id. 
-	
-	// If no user  with id return null.
-	// If error then return formatted data object.
-
-	const token = await generateSystemAuthToken();
-	
-	const headers = {
-		Authorization: `Bearer ${token}`
-	} 
-
-	const APIQueryURL = `${USERS_API}/${id}`;
-	return axios.get(APIQueryURL, { headers })
-		.then(({ data: { user } }) => ({ user }))
-		.catch(({ response: { data, status } }) => {
-			if (status === 404) {
-				return null;
-			} 
-
-			return {
-				error: { 
-					data, 
-					status, 
-					error_code: "PROBLEM RETRIEVING USER" 
-				}
-			}
-		});
-};
-
-const createUser = async (signUpData) => {
-	// Create user
-	const token = await generateSystemAuthToken();
-	
-	const headers = { Authorization: `Bearer ${token}` } 
-
-    return axios.post(USERS_API, signUpData, { headers })
-        .then(({ data: { new_user: newUser } }) => ({ newUser }))
-        .catch(({ response: { data, status }}) => ({ error: { status, data } }));
-}
-
-const verifyUserPassword = (unhashedPwd, hashedPwd) => {
-	// Check if a hashed password matches an unhashed password.
-	return bcrpyt.compareSync(unhashedPwd, hashedPwd)
-};
-
-const generateUserTokens = (user, options) => {
-
-	// Produce tokens from user record.
-
-	const { access_level, _id } = user;
-	const { 
-		// Default to 1 Hour.
-		accessTokenExpiresIn = 60 * 60, 
-		// Default to 1 Week.
-		refreshTokenExpiresIn = 60 * 60 * 24 * 7
-	} = options;
-
-	const accessTokenPayload = {
-		access_type: "USER",
-		authenticated_user: { access_level, _id } 
-	}; 
-
-	const accessToken = jwt.sign
-		(accessTokenPayload, 
-		JWT_SECRET_KEY, 
-		{ expiresIn: accessTokenExpiresIn}
-	);
-
-	const refreshTokenPayload = { _id };
-
-	const refreshToken = jwt.sign(
-		refreshTokenPayload, 
-		JWT_SECRET_KEY, 
-		{ expiresIn: refreshTokenExpiresIn }
-	);
-
-	const accessTokenDecoded = jwt.verify(accessToken, JWT_SECRET_KEY);
-	const refreshTokenDecoded = jwt.verify(refreshToken, JWT_SECRET_KEY);
-
-	return ({
-		accessToken: {
-			token: accessToken,
-			payload: accessTokenPayload,
-			exp: accessTokenDecoded.exp,
-			expDate: new Date(accessTokenDecoded.exp * 1000),
-			iat: accessTokenDecoded.iat
-		},
-		refreshToken: {
-			token: refreshToken,
-			payload: refreshTokenPayload,
-			exp: refreshTokenDecoded.exp,
-			expDate: new Date(refreshTokenDecoded.exp * 1000),
-			iat: refreshTokenDecoded.iat
-		}
-	})
-}
-
-const validateRefreshTokenCookie = (req, res, access_token) => {
-
-	// Parse cookies in req object for the refresh token cookie.
-	// If it is there, then resolve successfully.
-	// Otherwise, try to locate the TokenStore record that contains
-	// the right refresh token and then set the token in a cookie on
-	// the res object.
-
-	return new Promise((resolve) => {
-		if (req.cookies[REFRESH_TOKEN_COOKIE_NAME]) {
-			return resolve({ error: null });
-		}
-		
-
-		TokenStore.findOne({ access_token }, (error, tokenStore) => {
-
-			if (error) {
-				return resolve({ 
-					error: {
-						data: error,
-						status: 500,
-						code: "PROBLEM RETRIEVING REFRESH TOKEN"
-					} 
-				});
-			} else if (tokenStore === null) {
-				return resolve({ 
-					error: {
-						data: null,
-						status: 500,
-						code: "NO RECORD OF CURRENT TOKEN EXISTS"
-					} 
-				});
-			}
-
-			res.cookie(
-				REFRESH_TOKEN_COOKIE_NAME, 
-				tokenStore.refresh_token, 
-				{
-					httpOnly: true,
-					expires: tokenStore.refresh_token_exp_date
-				}
-			);
-
-			resolve({ error: null });
-		})
-
-	});
-}
-
-
-
 // public
 app.post('/sign-in', async (req, res) => {
 
@@ -291,7 +69,7 @@ app.post('/sign-in', async (req, res) => {
 	} 
 
 	// Fetch user by submitted email. If user does not exist return 401 error.
-	const { user, error: userFetchError }  = await fetchUserByEmail(email);
+	const { user, error: userFetchError }  = await fetchUserByEmail(email, tokenCache);
 
 	if (userFetchError) {
 		const { data: error, status, error_code } = userFetchError;
@@ -361,7 +139,7 @@ app.post('/sign-in', async (req, res) => {
 	const { 
 		status, 
 		cacheError 
-	} = await setInUserAuthTokenCache(
+	} = await tokenCache.setKey(
 		accessToken.token, 
 		{
 			...accessToken.payload,		
@@ -421,7 +199,7 @@ app.get('/authorize', async (req, res) => {
 	const { 
 		cacheError: blacklistCacheError, 
 		cachedVal: blacklistCachedVal 
-	} = await checkUserAuthTokenBlacklistCache(access_token);
+	} = await tokenBlacklistCache.getKey(access_token);
 
 	if (blacklistCacheError) {
 		const error_code = "PROBLEM CHECKING BLACKLIST CACHE";
@@ -450,15 +228,14 @@ app.get('/authorize', async (req, res) => {
 	const { 
 		cacheError, 
 		cachedVal 
-	} = await checkUserAuthTokenCache(access_token);
+	} = await tokenCache.getKey(access_token);
 	
 
 
 	if (cachedVal) {
-
 		if (access_token.slice(0, 3) === "SYS") {
 			const { exp, iat, ...rest } = cachedVal;
-			userAuthTokenCache.del(access_token);
+			tokenCache.deleteKey(access_token);
 			return res.send({ ...rest });
 		}
 
@@ -519,7 +296,7 @@ app.get('/authorize', async (req, res) => {
 		const { 
 			status, 
 			cacheError 
-		} = await setInUserAuthTokenCache(
+		} = await tokenCache.setKey(
 			access_token, 
 			decodedAccessToken,
 			decodedAccessToken.exp - decodedAccessToken.iat
@@ -551,7 +328,7 @@ app.get('/refresh', async (req, res) => {
 	const { 
 		cacheError: blacklistCacheError, 
 		cachedVal: blacklistCachedVal 
-	} = await checkUserAuthTokenBlacklistCache(access_token);
+	} = await tokenBlacklistCache.getKey(access_token);
 
 	if (blacklistCacheError) {
 		const error_code = "PROBLEM CHECKING BLACKLIST CACHE";
@@ -596,7 +373,7 @@ app.get('/refresh', async (req, res) => {
 
 	// Take tokenStore and use tokenStore.user_id to pull user record.
 	const { user_id } = tokenStore;
-	const { user, error: userFetchError } = await fetchUserById(user_id);
+	const { user, error: userFetchError } = await fetchUserById(user_id, tokenCache);
 
 	// If user does not exist return an error.
 	if (userFetchError) {
@@ -652,7 +429,7 @@ app.get('/refresh', async (req, res) => {
 	const { 
 		status, 
 		cacheError 
-	} = await setInUserAuthTokenCache(
+	} = await tokenCache.setKey(
 		accessToken.token, 
 		{
 			...accessToken.payload,		
@@ -701,7 +478,7 @@ app.get('/sign-out', async (req, res) => {
 	const { 
 		cacheError: blacklistCacheError, 
 		cachedVal: blacklistCachedVal
-	} = await checkUserAuthTokenBlacklistCache(access_token);
+	} = await tokenBlacklistCache.getKey(access_token);
 
 	if (blacklistCacheError) {
 		console.trace("PROBLEM CHECKING BLACKLIST CACHE");
@@ -725,7 +502,7 @@ app.get('/sign-out', async (req, res) => {
 		const { 
 			status, 
 			cacheError
-		} = await setInUserAuthTokenBlacklistCache(access_token, { created_at: new Date() }, exp - iat);
+		} = await tokenBlacklistCache.setKey(access_token, { created_at: new Date() }, exp - iat);
 
 		if (status !== "OK" || cacheError) {
 			const error_code = "PROBLEM BLACKLISTING TOKEN";
@@ -738,7 +515,6 @@ app.get('/sign-out', async (req, res) => {
 });
 
 // public
-
 const transporter = nodemailer.createTransport({
 	service: 'gmail',
 	auth: {
@@ -752,7 +528,7 @@ const transporter = nodemailer.createTransport({
 app.post('/sign-up', async (req, res) => {
 	const { body: signUpData } = req;
 
-	const { error, newUser: new_user } = await createUser(signUpData);
+	const { error, newUser: new_user } = await createUser(signUpData, tokenCache);
 
 	if (error) {
 		const { data, status } = error;
@@ -780,21 +556,16 @@ const dbOptions = {
 	useUnifiedTopology: true
 };
 
-userAuthTokenCache.on("connect", error => {
+
+mongoose.connect(`${MONGO_DB_URL}/authentication-api`, dbOptions, error => {
 	if (error) {
 		console.log(error);
 		process.exit(1);
 	}
 
-	mongoose.connect(`${MONGO_DB_URL}/authentication-api`, dbOptions, error => {
-		if (error) {
-			console.log(error);
-			process.exit(1);
-		}
-
-		app.listen(PORT, () => {
-			console.log(`Authentication API running on PORT ${PORT}!`);
-		});
+	app.listen(PORT, () => {
+		console.log(`Authentication API running on PORT ${PORT}!`);
 	});
 });
+
 
