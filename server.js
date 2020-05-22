@@ -86,7 +86,7 @@ app.post("/sign-in", async (req, res) => {
 	// These are objects filled with the data
 	//  relevant to each token including the token iteself.
 	const { accessToken, refreshToken } = generateUserTokens(user, {
-		accessTokenExpiresIn: 60 * 60, // 1 Hour
+		accessTokenExpiresIn: 10, // 1 Hour
 		refreshTokenExpiresIn: 60 * 60 * 24 * 7 // 1 Week
 	});
 
@@ -200,6 +200,7 @@ app.get("/authorize", async (req, res) => {
 		}
 	*/
 	// Send 500 error if there is a problem.
+
 	const { cacheError, cachedVal } = await tokenCache.getKey(access_token);
 
 	if (cachedVal) {
