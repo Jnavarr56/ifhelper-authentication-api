@@ -6,8 +6,7 @@ require("dotenv").config();
 const { JWT_SECRET_KEY } = process.env;
 
 const generateSystemAuthToken = async (tokenCacheManager) => {
-	const sysAuthToken =
-		"SYS" + cryptoRandomString({ length: 10, type: "base64" });
+	const sysAuthToken = cryptoRandomString({ length: 10, type: "base64" });
 	const payload = { access_type: "SYSTEM" };
 
 	const { cacheError, status } = await tokenCacheManager.setKey(

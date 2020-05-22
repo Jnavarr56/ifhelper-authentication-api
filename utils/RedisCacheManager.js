@@ -2,6 +2,11 @@ const redis = require("redis");
 
 class RedisCacheManager {
 	constructor(redisCacheOpts) {
+		if (!redisCacheOpts.prefix) {
+			throw new Error("Prefix Required");
+		}
+
+		this.opts = redisCacheOpts;
 		this.redisClient = redis.createClient(redisCacheOpts);
 	}
 
@@ -31,8 +36,17 @@ class RedisCacheManager {
 
 	deleteKey(key) {
 		return new Promise((resolve) => {
-			this.redisClient.del(key, (n) => {
-				resolve(n);
+			this.redisClient.del(key, (err, n) => resolve(n));
+		});
+	}
+
+	deleteAllKeys() {
+		return new Promise((resolve) => {
+			this.redisClient.keys(this.opts.prefix + "*", (err, rows) => {
+				this.redisClient.del(
+					rows.map((row) => row.replace(this.opts.prefix, "")),
+					(err, n) => resolve(n)
+				);
 			});
 		});
 	}

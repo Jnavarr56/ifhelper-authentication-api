@@ -159,7 +159,7 @@ app.post("/sign-in", async (req, res) => {
 	});
 });
 
-// token required
+// token required, sys(1 time ok, does not set refresh token in cache) vs user
 app.get("/authorize", async (req, res) => {
 	const { token: access_token } = req;
 
@@ -203,27 +203,21 @@ app.get("/authorize", async (req, res) => {
 	const { cacheError, cachedVal } = await tokenCache.getKey(access_token);
 
 	if (cachedVal) {
-		if (access_token.slice(0, 3) === "SYS") {
-			// eslint-disable-next-line no-unused-vars
-			const { exp, iat, ...rest } = cachedVal;
+		if (cachedVal.access_type === "SYSTEM") {
 			tokenCache.deleteKey(access_token);
-			return res.send({ ...rest });
+		} else {
+			const { error: resetRefreshTokenError } = await validateRefreshTokenCookie(
+				req,
+				res,
+				access_token
+			);
+			if (resetRefreshTokenError) {
+				const { error, status, code } = resetRefreshTokenError;
+				console.trace(code, error);
+				return res.status(status).send({ error_code: code });
+			}
 		}
 
-		// If access_token is in cache, make refresh token
-		// is present. Reset it if it is not. If there is
-		// a problem, send back an error determined by function.
-		const { error: resetRefreshTokenError } = await validateRefreshTokenCookie(
-			req,
-			res,
-			access_token
-		);
-
-		if (resetRefreshTokenError) {
-			const { error, status, code } = resetRefreshTokenError;
-			console.trace(code, error);
-			return res.status(status).send({ error_code: code });
-		}
 		// eslint-disable-next-line no-unused-vars
 		const { exp, iat, ...rest } = cachedVal;
 		return res.send({ ...rest });
@@ -283,7 +277,7 @@ app.get("/authorize", async (req, res) => {
 	});
 });
 
-// token required
+// token required, user
 app.get("/refresh", async (req, res) => {
 	// Check for access_token in header. If missing,
 	// send back 400 error.
@@ -417,8 +411,8 @@ app.get("/refresh", async (req, res) => {
 	});
 });
 
-// token required
-app.get("/sign-out", async (req, res) => {
+// token required, user
+app.post("/sign-out", async (req, res) => {
 	const { token: access_token } = req;
 
 	// Check for access_token in header. If missing,
@@ -439,9 +433,35 @@ app.get("/sign-out", async (req, res) => {
 	}
 
 	if (blacklistCachedVal) {
-		return res.status(400).send({
+		return res.status(401).send({
 			error_code: "TOKEN ALREADY BLACKLISTED"
 		});
+	}
+
+	const {
+		cacheError: tokenCacheError,
+		cachedVal: tokenCachedVal
+	} = await tokenCache.getKey(access_token);
+
+	if (tokenCacheError) {
+		console.trace("PROBLEM CHECKING TOKEN CACHE");
+	}
+
+	if (tokenCachedVal) {
+		const { exp, iat } = tokenCachedVal;
+		const { status, cacheError } = await tokenBlacklistCache.setKey(
+			access_token,
+			{ created_at: new Date() },
+			exp - iat
+		);
+
+		if (status !== "OK" || cacheError) {
+			const error_code = "PROBLEM BLACKLISTING TOKEN";
+			console.log(error_code, cacheError);
+			return res.send(500)({ error_code });
+		}
+
+		return res.send("SUCCESS");
 	}
 
 	jwt.verify(access_token, JWT_SECRET_KEY, async (error, decodedToken) => {
@@ -467,6 +487,130 @@ app.get("/sign-out", async (req, res) => {
 
 		return res.send("SUCCESS");
 	});
+});
+
+// token required, user and sys same
+app.post("/sign-out-all-devices", async (req, res) => {
+	const { token: access_token } = req;
+
+	// Check for access_token in header. If missing,
+	// send back 400 error.
+	if (!access_token) {
+		return res.status(400).send({
+			error_code: "MISSING AUTHORIZATION BEARER TOKEN"
+		});
+	}
+
+	// Check to make sure submitted token has not been invalided.
+	const {
+		cacheError: blacklistCacheError,
+		cachedVal: blacklistCachedVal
+	} = await tokenBlacklistCache.getKey(access_token);
+
+	if (blacklistCacheError) {
+		console.trace("PROBLEM CHECKING BLACKLIST CACHE");
+	}
+
+	if (blacklistCachedVal) {
+		return res.status(401).send({
+			error_code: "TOKEN ALREADY BLACKLISTED"
+		});
+	}
+
+	// Check for token in the tokenCache.
+	const {
+		cacheError: tokenCacheError,
+		cachedVal: tokenCachedVal
+	} = await tokenCache.getKey(access_token);
+
+	if (tokenCacheError) {
+		const error_code = "PROBLEM READING CACHE";
+		console.trace(tokenCacheError, error_code);
+		return res.status(500).send({ error_code });
+	} else if (tokenCachedVal) {
+		const { access_type, authenticated_user } = tokenCachedVal;
+
+		if (access_type === "SYSTEM") {
+			tokenCache.deleteKey(access_token);
+		}
+
+		try {
+			const stores = await TokenStore.find({
+				user_id: authenticated_user._id,
+				access_token_exp_date: {
+					$gte: new Date()
+				}
+			});
+
+			for (let tokenStore of stores) {
+				const { cachedVal, cacheError } = await tokenBlacklistCache.getKey(
+					tokenStore.access_token
+				);
+				if (cacheError) throw new Error(cacheError);
+
+				if (!cachedVal) {
+					const { cacheError } = await tokenBlacklistCache.setKey(
+						tokenStore.access_token,
+						{ created_at: new Date() },
+						Math.ceil(
+							(tokenStore.access_token_exp_date - tokenStore.createdAt) / 1000
+						)
+					);
+					if (cacheError) throw new Error(cacheError);
+				}
+			}
+
+			return res.send("SUCCESS");
+		} catch (error) {
+			const error_code = "PROBLEM BLACKLISTING TOKENS";
+			console.trace(error, error_code);
+			return res.status(500).send({ error_code });
+		}
+	} else {
+		jwt.verify(access_token, JWT_SECRET_KEY, async (error, decodedToken) => {
+			if (error) {
+				return res.status(401).send({
+					error_code: "TOKEN ALREADY INVALID"
+				});
+			}
+
+			const { authenticated_user } = decodedToken;
+
+			try {
+				const stores = await TokenStore.find({
+					user_id: authenticated_user._id,
+					access_token_exp_date: {
+						$gte: new Date()
+					}
+				});
+
+				console.log(stores, "non cache sys: false");
+
+				for (let tokenStore of stores) {
+					const { cachedVal, cacheError } = await tokenBlacklistCache.getKey(
+						tokenStore.access_token
+					);
+					if (cacheError) throw new Error(cacheError);
+					if (!cachedVal) {
+						const { cacheError } = await tokenBlacklistCache.setKey(
+							tokenStore.access_token,
+							{ created_at: new Date() },
+							Math.ceil(
+								(tokenStore.access_token_exp_date - tokenStore.createdAt) / 1000
+							)
+						);
+						if (cacheError) throw new Error(cacheError);
+					}
+				}
+			} catch (error) {
+				const error_code = "PROBLEM BLACKLISTING TOKENS";
+				console.trace(error, error_code);
+				return res.status(500).send({ error_code });
+			}
+
+			return res.send("SUCCESS");
+		});
+	}
 });
 
 const dbOptions = {

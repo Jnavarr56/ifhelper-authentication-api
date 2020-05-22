@@ -2,7 +2,7 @@ const axios = require("axios");
 const bcrypt = require("bcrypt");
 const { generateSystemAuthToken } = require("./tokens");
 
-const USERS_API = "http://localhost:4000/users";
+const USERS_API = "http://localhost:5000/users";
 
 const fetchUserByEmail = async (email, tokenCache) => {
 	// Fetch user by email.
@@ -42,15 +42,11 @@ const fetchUserById = async (id, tokenCache) => {
 		.get(APIQueryURL, { headers })
 		.then(({ data: { user } }) => ({ user }))
 		.catch(({ response: { data, status } }) => {
-			if (status === 404) {
-				return null;
-			}
-
 			return {
 				error: {
 					data,
 					status,
-					error_code: "PROBLEM RETRIEVING USER"
+					error_code: data.error_code || "PROBLEM RETRIEVING USER"
 				}
 			};
 		});
