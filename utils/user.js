@@ -2,7 +2,10 @@ const axios = require("axios");
 const bcrypt = require("bcrypt");
 const { generateSystemAuthToken } = require("./tokens");
 
-const USERS_API = "http://localhost:5000/users";
+require("dotenv").config();
+
+
+const USERS_API = `http://server/api/users`;
 
 const fetchUserByEmail = async (email, tokenCache) => {
 	// Fetch user by email.

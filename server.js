@@ -1,3 +1,4 @@
+const cors = require('cors');
 const morgan = require("morgan");
 const express = require("express");
 const jwt = require("jsonwebtoken");
@@ -7,6 +8,7 @@ const bodyParser = require("body-parser");
 const cookieParser = require("cookie-parser");
 const useragent = require("express-useragent");
 const bearerToken = require("express-bearer-token");
+
 
 const { TokenStore } = require("./db/models");
 const RedisCacheManager = require("./utils/RedisCacheManager");
@@ -23,23 +25,26 @@ require("dotenv").config();
 const PORT = process.env.PORT || 3000;
 const REDIS_PORT = process.env.REDIS_PORT || 6379;
 
-const { REFRESH_TOKEN_COOKIE_NAME, JWT_SECRET_KEY } = process.env;
+const { REFRESH_TOKEN_COOKIE_NAME, JWT_SECRET_KEY, MONGO_DB_URL, REDIS_URL } = process.env;
 
-const MONGO_DB_URL = "mongodb://127.0.0.1:27017";
+const API_NAME = "/api/authentication";
 
 const tokenCache = new RedisCacheManager({
 	port: REDIS_PORT,
+	url: REDIS_URL,
 	prefix: "AUTHENTICATION_TOKENS"
 });
 
 const tokenBlacklistCache = new RedisCacheManager({
 	port: REDIS_PORT,
+	url: REDIS_URL,
 	prefix: "AUTHENTICATION_TOKENS_BLACKLIST"
 });
 
 const app = express();
 
 app
+	.use(cors({ origin: 'http://localhost:3000' }))
 	.use(bodyParser.urlencoded({ extended: true }))
 	.use(bodyParser.json())
 	.use(useragent.express())
@@ -49,7 +54,7 @@ app
 	.use(morgan("dev"));
 
 // public
-app.post("/sign-in", async (req, res) => {
+app.post(API_NAME + "/sign-in", async (req, res) => {
 	const { email, password } = req.body;
 
 	// If email or password not supplied send bad 400 back error.
@@ -80,13 +85,17 @@ app.post("/sign-in", async (req, res) => {
 		return res.status(401).send({
 			error_code: "EMAIL/PASSWORD COMBINATION NOT RECOGNIZED"
 		});
+	} else if (!user.email_confirmed) {
+		return res.status(401).send({
+			error_code: "EMAIL NOT CONFIRMED"
+		});
 	}
 
 	// Create auth tokens for user.
 	// These are objects filled with the data
 	//  relevant to each token including the token iteself.
 	const { accessToken, refreshToken } = generateUserTokens(user, {
-		accessTokenExpiresIn: 10, // 1 Hour
+		accessTokenExpiresIn: 60 * 60, // 1 Hour
 		refreshTokenExpiresIn: 60 * 60 * 24 * 7 // 1 Week
 	});
 
@@ -139,7 +148,8 @@ app.post("/sign-in", async (req, res) => {
 	// Set refresh token in httpOnly cookie for its lifespan.
 	res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshToken.token, {
 		httpOnly: true,
-		expires: refreshToken.expDate
+		expires: refreshToken.expDate,
+		sameSite: true
 	});
 
 	// Set send back access token and payload.
@@ -160,7 +170,7 @@ app.post("/sign-in", async (req, res) => {
 });
 
 // token required, sys(1 time ok, does not set refresh token in cache) vs user
-app.get("/authorize", async (req, res) => {
+app.get(API_NAME + "/authorize", async (req, res) => {
 	const { token: access_token } = req;
 
 	// Check for access_token in header. If missing,
@@ -279,7 +289,7 @@ app.get("/authorize", async (req, res) => {
 });
 
 // token required, user
-app.get("/refresh", async (req, res) => {
+app.get(API_NAME + "/refresh", async (req, res) => {
 	// Check for access_token in header. If missing,
 	// send back 400 error.
 	const { token: access_token } = req;
@@ -403,7 +413,8 @@ app.get("/refresh", async (req, res) => {
 	// Set refresh token in httpOnly cookie for its lifespan.
 	res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshToken.token, {
 		httpOnly: true,
-		expires: refreshToken.expDate
+		expires: refreshToken.expDate,
+		sameSite: true
 	});
 
 	return res.send({
@@ -413,7 +424,7 @@ app.get("/refresh", async (req, res) => {
 });
 
 // token required, user
-app.post("/sign-out", async (req, res) => {
+app.post(API_NAME + "/sign-out", async (req, res) => {
 	const { token: access_token } = req;
 
 	// Check for access_token in header. If missing,
@@ -491,7 +502,7 @@ app.post("/sign-out", async (req, res) => {
 });
 
 // token required, user and sys same
-app.post("/sign-out-all-devices", async (req, res) => {
+app.post(API_NAME + "/sign-out-all-devices", async (req, res) => {
 	const { token: access_token } = req;
 
 	// Check for access_token in header. If missing,
@@ -585,7 +596,7 @@ app.post("/sign-out-all-devices", async (req, res) => {
 					}
 				});
 
-				console.log(stores, "non cache sys: false");
+
 
 				for (let tokenStore of stores) {
 					const { cachedVal, cacheError } = await tokenBlacklistCache.getKey(
@@ -619,7 +630,8 @@ const dbOptions = {
 	useUnifiedTopology: true
 };
 
-mongoose.connect(`${MONGO_DB_URL}/authentication-api`, dbOptions, (error) => {
+
+mongoose.connect(`${MONGO_DB_URL}/authentication-api?retryWrites=true&w=majority`, dbOptions, (error) => {
 	if (error) {
 		console.log(error);
 		process.exit(1);
