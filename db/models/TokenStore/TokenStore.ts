@@ -1,4 +1,4 @@
-const { Schema, model } = require("mongoose");
+import { Schema, model } from "mongoose";
 
 const TokenStoreSchema = new Schema(
 	{
@@ -31,4 +31,4 @@ const TokenStoreSchema = new Schema(
 	{ timestamps: true }
 );
 
-module.exports = model("TokenStore", TokenStoreSchema, "TokenStore");
+export default model("TokenStore", TokenStoreSchema, "TokenStore");
