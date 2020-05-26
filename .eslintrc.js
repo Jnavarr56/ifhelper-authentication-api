@@ -1,9 +1,14 @@
 module.exports = {
-	extends: [ "eslint:recommended" ],
+	parser: "@typescript-eslint/parser",
 	parserOptions: {
-		ecmaVersion: 2018,
+		ecmaVersion: 2020,
 		sourceType: "module"
 	},
+	extends: [
+		"plugin:@typescript-eslint/recommended", 
+		"prettier/@typescript-eslint", 
+		"plugin:prettier/recommended"
+	],
 	rules: {
 		"comma-dangle": [ "warn", "never" ],
 		"object-curly-spacing": [ "warn", "always" ],

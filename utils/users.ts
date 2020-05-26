@@ -1,50 +1,42 @@
-import axios, { AxiosResponse } from 'axios'
-import bcrypt from 'bcrypt'
-import { generateSystemAuthToken } from './tokens';
-import { UserRecord } from '../types/index'
-
+import axios, { AxiosResponse } from "axios";
+import bcrypt from "bcrypt";
+import { generateSystemAuthToken } from "./tokens";
+import { UserRecord } from "../types/index";
 
 require("dotenv").config();
 
-const { USERS_API ='http://server/api/users' } = process.env; 
-
+const { USERS_API = "http://server/api/users" } = process.env;
 
 type UserEmailStr = string;
 
 interface EmailFetchResponse extends AxiosResponse {
 	data: {
-		query_results: [UserRecord]
-	}
+		query_results: [UserRecord];
+	};
 }
 
 interface IDFetchResponse extends AxiosResponse {
-	data: UserRecord
+	data: UserRecord;
 }
 
-
 const fetchUserByEmail = async (email: UserEmailStr): Promise<UserRecord> => {
-
-	const token = await generateSystemAuthToken(); 
+	const token = await generateSystemAuthToken();
 
 	const headers = { Authorization: `Bearer ${token}` };
 	const queryURL = `${USERS_API}?email=${email}&limit=1`;
 
 	return new Promise((resolve) => {
-		axios
-		.get(queryURL, { headers })
-		.then((response: EmailFetchResponse) => {
+		axios.get(queryURL, { headers }).then((response: EmailFetchResponse) => {
 			const { query_results } = response.data;
 			const user: UserRecord = query_results[0];
-			resolve(user)
-		})
-	})
+			resolve(user);
+		});
+	});
 };
-
 
 type UserIDStr = string;
 
 const fetchUserById = async (id: UserIDStr): Promise<UserRecord> => {
-
 	const token = await generateSystemAuthToken();
 
 	const headers = { Authorization: `Bearer ${token}` };
@@ -57,7 +49,7 @@ const fetchUserById = async (id: UserIDStr): Promise<UserRecord> => {
 				const user: UserRecord = response.data;
 				resolve(user);
 			})
-			.catch(error => {
+			.catch((error) => {
 				const { status } = error.response;
 				if (status === 401) {
 					resolve(null);
@@ -65,14 +57,16 @@ const fetchUserById = async (id: UserIDStr): Promise<UserRecord> => {
 					reject(error);
 				}
 			});
-	})
+	});
 };
-
 
 type UserRecordPassword = string;
 type DBPassword = string;
 
-const isPasswordValid = (unhashedPwd: UserRecordPassword, hashedPwd: DBPassword): boolean => {
+const isPasswordValid = (
+	unhashedPwd: UserRecordPassword,
+	hashedPwd: DBPassword
+): boolean => {
 	return bcrypt.compareSync(unhashedPwd, hashedPwd);
 };
 

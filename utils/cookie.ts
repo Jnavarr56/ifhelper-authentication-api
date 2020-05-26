@@ -3,32 +3,40 @@ import { Response } from "express";
 import { TokenStore } from "../db/models";
 const { REFRESH_TOKEN_COOKIE_NAME } = process.env;
 
-const validateRefreshTokenCookie = (req: RequestWithIpInfo, res: Response, accessToken: string): Promise<void> => {
-	return new Promise(async(resolve, reject) => {
+const validateRefreshTokenCookie = (
+	req: RequestWithIpInfo,
+	res: Response,
+	accessToken: string
+): Promise<void> => {
+	return new Promise(async (resolve, reject) => {
 		if (req.cookies[REFRESH_TOKEN_COOKIE_NAME]) return resolve();
 
-		TokenStore.findOne({ access_token: accessToken }, (error, tokenStore: any) => {
+		TokenStore.findOne(
+			{ access_token: accessToken },
+			(error, tokenStore: any) => {
+				if (error) reject(error);
+				if (!tokenStore) reject("NO RECORD OF TOKEN STORE");
 
-			if (error) reject(error);
-			if (!tokenStore) reject("NO RECORD OF TOKEN STORE");
+				res.cookie(REFRESH_TOKEN_COOKIE_NAME, tokenStore.refresh_token, {
+					httpOnly: true,
+					expires: tokenStore.refresh_token_exp_date
+				});
 
-			res.cookie(REFRESH_TOKEN_COOKIE_NAME, tokenStore.refresh_token, {
-				httpOnly: true,
-				expires: tokenStore.refresh_token_exp_date
-			});
-
-			resolve();
-		});
+				resolve();
+			}
+		);
 	});
 };
 
-
-const setRefreshTokenCookie = (res: Response, refreshTokenData: RefreshTokenData): void => {
+const setRefreshTokenCookie = (
+	res: Response,
+	refreshTokenData: RefreshTokenData
+): void => {
 	res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshTokenData.token, {
 		httpOnly: true,
 		expires: refreshTokenData.expDate,
 		sameSite: true
 	});
-}
+};
 
 export { validateRefreshTokenCookie, setRefreshTokenCookie };

@@ -1,16 +1,14 @@
 import { ClientOpts, RedisClient, RedisError, createClient } from "redis";
 
-
 interface cacheManagerOpts extends ClientOpts {
-	prefix: string
-} 
+	prefix: string;
+}
 
 class RedisCacheManager {
 	private _client: RedisClient;
 	private _opts: cacheManagerOpts;
 
 	public constructor(opts: cacheManagerOpts) {
-
 		this._opts = opts;
 		this._client = createClient(opts);
 	}
