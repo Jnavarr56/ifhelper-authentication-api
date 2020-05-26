@@ -13,6 +13,8 @@ import { TokenStore } from "./db/models";
 import mongoose, { ConnectionOptions } from "mongoose";
 import jwt from "jsonwebtoken";
 import { RequestWithIpInfo } from "./types/index";
+import { validateRefreshTokenCookie } from "./utils/cookie";
+import { blacklistAllTokens } from "./utils/tokens";
 
 require("dotenv").config();
 
@@ -152,14 +154,8 @@ app.get(
 			if (cachedPayload.access_type === "SYSTEM") {
 				// delete system tokens after use to avoid clogging memory
 				await AuthTokenCache.deleteKey(accessToken);
-			} else if (!req.cookies[REFRESH_TOKEN_COOKIE_NAME]) {
-				const tokenStore: any = await TokenStore.findOne({
-					access_token: accessToken
-				});
-				res.cookie(REFRESH_TOKEN_COOKIE_NAME, tokenStore.refresh_token, {
-					httpOnly: true,
-					expires: tokenStore.refresh_token_exp_date
-				});
+			} else {
+				await validateRefreshTokenCookie(req, res, accessToken);
 			}
 
 			return res.send(cachedPayload);
@@ -186,17 +182,8 @@ app.get(
 				// 5) set token payload in cache
 				await AuthTokenCache.setKey(accessToken, { ...payload }, exp - iat);
 
-				// is this necessary? *** FLAG ***
 				// 6) ensure client has refresh token
-				if (!req.cookies[REFRESH_TOKEN_COOKIE_NAME]) {
-					const tokenStore: any = await TokenStore.findOne({
-						access_token: accessToken
-					});
-					res.cookie(REFRESH_TOKEN_COOKIE_NAME, tokenStore.refresh_token, {
-						httpOnly: true,
-						expires: tokenStore.refresh_token_exp_date
-					});
-				}
+				await validateRefreshTokenCookie(req, res, accessToken);
 
 				const accessTokenPayload: AccessTokenPayload = { ...payload };
 
@@ -264,7 +251,6 @@ app.get(
 				accessTokenData.payload,
 				accessTokenData.exp - accessTokenData.iat
 			);
-			// await cacheAccessToken(accessTokenData);
 
 			// 6) set refresh token in a cookie
 			res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshTokenData.token, {
@@ -355,28 +341,10 @@ app.post(
 			if (access_type === "SYSTEM") {
 				await AuthTokenCache.deleteKey(accessToken);
 			}
-			// pull all tokenstores for user id found in payload
-			const stores: any = await TokenStore.find({
-				user_id: authenticated_user._id,
-				access_token_exp_date: { $gte: new Date() }
-			});
 
-			console.log(stores);
+			// 3) pull all tokenstores for user and add the tokens in them to blacklist cache
+			await blacklistAllTokens(authenticated_user._id);
 
-			const storeArr: Array<any> = Array.isArray(stores) ? stores : [stores];
-			// add access token in each tokenstore to the black list
-			for (const store of storeArr) {
-				const notYetBlacklisted: boolean = await TokenBlacklistCache.getKey(
-					store.access_token
-				).then((payload) => payload === null);
-
-				if (notYetBlacklisted) {
-					const ttl: number = Math.ceil(
-						(store.access_token_exp_date - store.createdAt) / 1000
-					);
-					await TokenBlacklistCache.setKey(store.access_token, {}, ttl);
-				}
-			}
 			return res.send("SUCCESS");
 		}
 
@@ -396,26 +364,7 @@ app.post(
 			}: { authenticated_user: { _id: string } } = decodedToken;
 
 			// 5)  pull all tokenstores for user id found in payload
-			const stores: any = await TokenStore.find({
-				user_id: authenticated_user._id,
-				access_token_exp_date: { $gte: new Date() }
-			});
-
-			const storeArr: Array<any> = Array.isArray(stores) ? stores : [stores];
-			// add access token in each tokenstore to the black list
-			for (const store of storeArr) {
-				const notYetBlacklisted: boolean = await TokenBlacklistCache.getKey(
-					store.access_token
-				).then((payload) => payload === null);
-
-				if (notYetBlacklisted) {
-					const ttl: number = Math.ceil(
-						(store.access_token_exp_date - store.createdAt) / 1000
-					);
-					await TokenBlacklistCache.setKey(store.access_token, {}, ttl);
-				}
-			}
-
+			await blacklistAllTokens(authenticated_user._id);
 			return res.send("SUCCESS");
 		});
 	}

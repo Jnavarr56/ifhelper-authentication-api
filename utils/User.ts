@@ -1,7 +1,22 @@
 import { UserRecord, TokenDataPair } from "../types";
-import { fetchUserByEmail, fetchUserById } from "./users";
 import { createUserTokenData } from "./tokens";
 import bcrypt from "bcrypt";
+import axios, { AxiosResponse } from "axios";
+import { generateSystemAuthToken } from "./tokens";
+
+require("dotenv").config();
+
+const { USERS_API = "http://server/api/users" } = process.env;
+
+interface EmailFetchResponse extends AxiosResponse {
+	data: {
+		query_results: [UserRecord];
+	};
+}
+
+interface IDFetchResponse extends AxiosResponse {
+	data: UserRecord;
+}
 
 class User {
 	private _user: UserRecord;
@@ -13,21 +28,39 @@ class User {
 		return Boolean(this._user);
 	}
 
-	public initByEmail(email: string): Promise<void> {
+	public async initByEmail(email: string): Promise<void> {
+		const token = await generateSystemAuthToken();
+		const headers = { Authorization: `Bearer ${token}` };
+		const queryURL = `${USERS_API}?email=${email}&limit=1`;
+
 		return new Promise((resolve) => {
-			fetchUserByEmail(email).then((user: UserRecord) => {
-				this._user = user;
+			axios.get(queryURL, { headers }).then((response: EmailFetchResponse) => {
+				const { query_results } = response.data;
+				this._user = query_results[0];
 				resolve();
 			});
 		});
 	}
 
-	public initByID(id: string): Promise<void> {
-		return new Promise((resolve) => {
-			fetchUserById(id).then((user: UserRecord) => {
-				this._user = user;
-				resolve();
-			});
+	public async initByID(id: string): Promise<void> {
+		const token = await generateSystemAuthToken();
+		const headers = { Authorization: `Bearer ${token}` };
+		const queryURL = `${USERS_API}/${id}`;
+
+		return new Promise((resolve, reject) => {
+			axios
+				.get(queryURL, { headers })
+				.then((response: IDFetchResponse) => {
+					this._user = response.data;
+					resolve();
+				})
+				.catch((error) => {
+					if (error.response.status === 401) {
+						resolve();
+					} else {
+						reject(error);
+					}
+				});
 		});
 	}
 
