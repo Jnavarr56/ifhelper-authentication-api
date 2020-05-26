@@ -3,11 +3,11 @@ import { Response } from "express";
 import { TokenStore } from "../db/models";
 const { REFRESH_TOKEN_COOKIE_NAME } = process.env;
 
-const validateRefreshTokenCookie = (
+export function validateRefreshTokenCookie(
 	req: RequestWithIpInfo,
 	res: Response,
 	accessToken: string
-): Promise<void> => {
+): Promise<void> {
 	return new Promise(async (resolve, reject) => {
 		if (req.cookies[REFRESH_TOKEN_COOKIE_NAME]) return resolve();
 
@@ -26,17 +26,4 @@ const validateRefreshTokenCookie = (
 			}
 		);
 	});
-};
-
-const setRefreshTokenCookie = (
-	res: Response,
-	refreshTokenData: RefreshTokenData
-): void => {
-	res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshTokenData.token, {
-		httpOnly: true,
-		expires: refreshTokenData.expDate,
-		sameSite: true
-	});
-};
-
-export { validateRefreshTokenCookie, setRefreshTokenCookie };
+}

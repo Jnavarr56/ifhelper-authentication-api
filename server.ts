@@ -152,7 +152,16 @@ app.get(
 			if (cachedPayload.access_type === "SYSTEM") {
 				// delete system tokens after use to avoid clogging memory
 				await AuthTokenCache.deleteKey(accessToken);
+			} else if (!req.cookies[REFRESH_TOKEN_COOKIE_NAME]) {
+				const tokenStore: any = await TokenStore.findOne({
+					access_token: accessToken
+				});
+				res.cookie(REFRESH_TOKEN_COOKIE_NAME, tokenStore.refresh_token, {
+					httpOnly: true,
+					expires: tokenStore.refresh_token_exp_date
+				});
 			}
+
 			return res.send(cachedPayload);
 		}
 
@@ -239,6 +248,7 @@ app.get(
 		// 5) generate tokens and issue a sign in response
 		user.initUserTokens().then(async ({ accessTokenData, refreshTokenData }) => {
 			// 4) save token data to database
+			console.log(user.getFields());
 			await TokenStore.create({
 				user_id: user.getFields()._id,
 				access_token: accessTokenData.token,
@@ -311,7 +321,7 @@ app.post(`${API_BASE_URL}${PATHNAME}/sign-out`, async (req, res) => {
 	});
 });
 
-// token required, user and sys same
+// token required
 app.post(
 	`${API_BASE_URL}${PATHNAME}/sign-out-all-devices`,
 	async (req, res) => {
@@ -342,7 +352,7 @@ app.post(
 				authenticated_user: { _id: string };
 			} = cachedPayload;
 
-			if (accessToken === "SYSTEM") {
+			if (access_type === "SYSTEM") {
 				await AuthTokenCache.deleteKey(accessToken);
 			}
 			// pull all tokenstores for user id found in payload
@@ -350,6 +360,8 @@ app.post(
 				user_id: authenticated_user._id,
 				access_token_exp_date: { $gte: new Date() }
 			});
+
+			console.log(stores);
 
 			const storeArr: Array<any> = Array.isArray(stores) ? stores : [stores];
 			// add access token in each tokenstore to the black list
@@ -362,7 +374,7 @@ app.post(
 					const ttl: number = Math.ceil(
 						(store.access_token_exp_date - store.createdAt) / 1000
 					);
-					await TokenBlacklistCache.setKey(accessToken, {}, ttl);
+					await TokenBlacklistCache.setKey(store.access_token, {}, ttl);
 				}
 			}
 			return res.send("SUCCESS");
@@ -380,18 +392,10 @@ app.post(
 				}
 			}
 			const {
-				access_type,
-				authenticated_user,
-				iat,
-				exp
-			}: {
-				access_type: string;
-				authenticated_user: { _id: string };
-				iat: number;
-				exp: number;
-			} = decodedToken;
+				authenticated_user
+			}: { authenticated_user: { _id: string } } = decodedToken;
 
-			// 5_ pull all tokenstores for user id found in payload
+			// 5)  pull all tokenstores for user id found in payload
 			const stores: any = await TokenStore.find({
 				user_id: authenticated_user._id,
 				access_token_exp_date: { $gte: new Date() }
@@ -408,7 +412,7 @@ app.post(
 					const ttl: number = Math.ceil(
 						(store.access_token_exp_date - store.createdAt) / 1000
 					);
-					await TokenBlacklistCache.setKey(accessToken, {}, ttl);
+					await TokenBlacklistCache.setKey(store.access_token, {}, ttl);
 				}
 			}
 

@@ -1,5 +1,4 @@
 import axios, { AxiosResponse } from "axios";
-import bcrypt from "bcrypt";
 import { generateSystemAuthToken } from "./tokens";
 import { UserRecord } from "../types/index";
 
@@ -60,14 +59,4 @@ const fetchUserById = async (id: UserIDStr): Promise<UserRecord> => {
 	});
 };
 
-type UserRecordPassword = string;
-type DBPassword = string;
-
-const isPasswordValid = (
-	unhashedPwd: UserRecordPassword,
-	hashedPwd: DBPassword
-): boolean => {
-	return bcrypt.compareSync(unhashedPwd, hashedPwd);
-};
-
-export { fetchUserByEmail, fetchUserById, isPasswordValid };
+export { fetchUserByEmail, fetchUserById };

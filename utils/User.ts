@@ -1,6 +1,7 @@
 import { UserRecord, TokenDataPair } from "../types";
-import { fetchUserByEmail, isPasswordValid, fetchUserById } from "./users";
+import { fetchUserByEmail, fetchUserById } from "./users";
 import { createUserTokenData } from "./tokens";
+import bcrypt from "bcrypt";
 
 class User {
 	private _user: UserRecord;
@@ -9,7 +10,7 @@ class User {
 	}
 
 	public exists(): boolean {
-		return this._user !== null;
+		return Boolean(this._user);
 	}
 
 	public initByEmail(email: string): Promise<void> {
@@ -32,7 +33,7 @@ class User {
 
 	public hasPassword(password: string): boolean {
 		if (!this.exists()) throw new Error("NO USER INITIALIZED");
-		return isPasswordValid(this._user.password, password);
+		return bcrypt.compareSync(password, this._user.password);
 	}
 
 	public confirmedEmail(): boolean {
