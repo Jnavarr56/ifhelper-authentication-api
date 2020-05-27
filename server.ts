@@ -1,7 +1,13 @@
-import express, { Application } from "express";
+import express, { Application, response } from "express";
 import RedisCacheManager from "./utils/RedisCacheManager";
 import User from "./utils/User";
-import { SignInResponse, AccessTokenPayload } from "./types/index";
+import {
+	SignInResponse,
+	AccessTokenPayload,
+	UpdateUserFields,
+	UserRecord,
+	NewUserFields
+} from "./types/index";
 import useragent from "express-useragent";
 import bodyParser from "body-parser";
 import bearerToken from "express-bearer-token";
@@ -15,6 +21,13 @@ import jwt from "jsonwebtoken";
 import { RequestWithIpInfo } from "./types/index";
 import { validateRefreshTokenCookie } from "./utils/cookie";
 import { blacklistAllTokens } from "./utils/tokens";
+import { google, oauth2_v2 } from "googleapis";
+import {
+	GetTokenResponse,
+	OAuth2Client
+} from "google-auth-library/build/src/auth/oauth2client";
+import { Credentials } from "google-auth-library/build/src/auth/credentials";
+import { GaxiosResponse } from "gaxios";
 
 require("dotenv").config();
 
@@ -24,6 +37,9 @@ const {
 	REDIS_URL,
 	MONGO_DB_URL,
 	JWT_SECRET_KEY,
+	GOOGLE_OAUTH_CLIENT_ID,
+	GOOGLE_OAUTH_SECRET,
+	GOOGLE_OAUTH_REDIRECT_URL,
 	REFRESH_TOKEN_COOKIE_NAME
 } = process.env;
 
@@ -64,6 +80,109 @@ const TokenBlacklistCache: RedisCacheManager = new RedisCacheManager({
 // model types
 // cache types
 
+const oauth2Client: OAuth2Client = new google.auth.OAuth2(
+	GOOGLE_OAUTH_CLIENT_ID,
+	GOOGLE_OAUTH_SECRET,
+	GOOGLE_OAUTH_REDIRECT_URL
+);
+
+// public
+app.get(`${API_BASE_URL}${PATHNAME}/sign-in/google`, async (req, res) => {
+	// 1) generate oauth screen url
+	const consent_screen_url: string = oauth2Client.generateAuthUrl({
+		scope: [
+			"https://www.googleapis.com/auth/plus.login",
+			"https://www.googleapis.com/auth/userinfo.profile",
+			"https://www.googleapis.com/auth/userinfo.email"
+		]
+	});
+	// 2) send oauth screen url
+	res.send({ consent_screen_url });
+});
+
+app.get(
+	`${API_BASE_URL}${PATHNAME}/callback/google`,
+	async (req: RequestWithIpInfo, res) => {
+		// 1) grab authorization code from query params, reject if missing
+		const code: string | any = req.query.code;
+		if (!code)
+			return res.status(400).send({ error_code: "MISSING AUTHORIZATION CODE" });
+
+		// 2) exchange code for tokens, send error if there is a problem
+		let tokens: Credentials;
+		try {
+			tokens = await oauth2Client
+				.getToken(code)
+				.then(({ tokens }): Credentials => tokens);
+		} catch (error) {
+			const response: GaxiosResponse = error.response;
+			const { data, status } = response;
+			res.status(status).send(data);
+		}
+
+		// 3) use tokens to initialize a client that can be used to get the users profile
+		const auth: OAuth2Client = new google.auth.OAuth2();
+		auth.setCredentials(tokens);
+		const profileClient: oauth2_v2.Oauth2 = google.oauth2({
+			auth,
+			version: "v2"
+		});
+
+		// 4) get users profile using client
+		const userProfile: oauth2_v2.Schema$Userinfo = await profileClient.userinfo.v2.me
+			.get()
+			.then(({ data }): oauth2_v2.Schema$Userinfo => data);
+
+		// 5) attempt to locate user with this gmail if can't, try to locate by user google profile id
+		const { email, id: google_id } = userProfile;
+
+		const user = new User();
+		await user.initByEmail(email).then(async () => {
+			if (!user.exists()) await user.initByGoogleID(google_id);
+		});
+
+		// 6) if found user make sure fields are current
+		if (user.exists()) {
+			const updateFields: UpdateUserFields = {};
+			const userFields: UserRecord = user.getFields();
+
+			if (userFields.google_id !== google_id) updateFields.google_id = google_id;
+			if (userFields.email !== email) updateFields.email = email;
+			if (!userFields.email_confirmed) updateFields.email_confirmed = true;
+
+			if (Object.keys(updateFields).length > 0) await user.update(updateFields);
+
+			// 6) if did not find user, create user
+		} else {
+			const { given_name: first_name, family_name: last_name } = userProfile;
+
+			await user.create({
+				google_id,
+				email,
+				first_name,
+				last_name,
+				password: google_id,
+				email_confirmed: true
+			});
+		}
+
+		// 7) produce tokens for user
+		const { accessTokenData } = user.initUserTokens();
+		// 8) save token data to database
+		await user.storeUserTokens(req);
+		// 9) set access token payload in the cache
+		await user.cacheUserTokens();
+		// 10) set refresh token in a cookie
+		user.setUserRefreshTokenCookie(res);
+		// 11) format and send
+		const dataToSend: SignInResponse = {
+			access_token: accessTokenData.token,
+			...accessTokenData.payload
+		};
+		res.send(dataToSend);
+	}
+);
+
 // public
 app.post(
 	`${API_BASE_URL}${PATHNAME}/sign-in`,
@@ -90,39 +209,19 @@ app.post(
 		}
 
 		// 3) produce tokens for user
-		user.initUserTokens().then(async ({ accessTokenData, refreshTokenData }) => {
-			// 4) save token data to database
-			await TokenStore.create({
-				user_id: user.getFields()._id,
-				access_token: accessTokenData.token,
-				refresh_token: refreshTokenData.token,
-				access_token_exp_date: accessTokenData.expDate,
-				refresh_token_exp_date: refreshTokenData.expDate,
-				requester_data: { ...req.useragent, ...req.ipInfo }
-			});
-
-			// 5) set access token payload in the cache
-			await AuthTokenCache.setKey(
-				accessTokenData.token,
-				accessTokenData.payload,
-				accessTokenData.exp - accessTokenData.iat
-			);
-
-			// 6) set refresh token in a cookie
-			res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshTokenData.token, {
-				httpOnly: true,
-				expires: refreshTokenData.expDate,
-				sameSite: true
-			});
-
-			// 7) format and send
-			const dataToSend: SignInResponse = {
-				access_token: accessTokenData.token,
-				...accessTokenData.payload
-			};
-
-			res.send(dataToSend);
-		});
+		const { accessTokenData } = user.initUserTokens();
+		// 4) save token data to database
+		await user.storeUserTokens(req);
+		// 5) set access token payload in the cache
+		await user.cacheUserTokens();
+		// 6) set refresh token in a cookie
+		user.setUserRefreshTokenCookie(res);
+		// 7) format and send
+		const dataToSend: SignInResponse = {
+			access_token: accessTokenData.token,
+			...accessTokenData.payload
+		};
+		res.send(dataToSend);
 	}
 );
 
@@ -179,10 +278,8 @@ app.get(
 
 				// 5) set token payload in cache
 				await AuthTokenCache.setKey(accessToken, { ...payload }, exp - iat);
-
 				// 6) ensure client has refresh token
 				await validateRefreshTokenCookie(req, res, accessToken);
-
 				const accessTokenPayload: AccessTokenPayload = { ...payload };
 
 				return res.send(accessTokenPayload);
@@ -230,40 +327,20 @@ app.get(
 		const user: User = new User();
 		await user.initByID(tokenStore.user_id);
 
-		// 5) generate tokens and issue a sign in response
-		user.initUserTokens().then(async ({ accessTokenData, refreshTokenData }) => {
-			// 4) save token data to database
-			await TokenStore.create({
-				user_id: user.getFields()._id,
-				access_token: accessTokenData.token,
-				refresh_token: refreshTokenData.token,
-				access_token_exp_date: accessTokenData.expDate,
-				refresh_token_exp_date: refreshTokenData.expDate,
-				requester_data: { ...req.useragent, ...req.ipInfo }
-			});
-
-			// 5) set access token payload in the cache
-			await AuthTokenCache.setKey(
-				accessTokenData.token,
-				accessTokenData.payload,
-				accessTokenData.exp - accessTokenData.iat
-			);
-
-			// 6) set refresh token in a cookie
-			res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshTokenData.token, {
-				httpOnly: true,
-				expires: refreshTokenData.expDate,
-				sameSite: true
-			});
-
-			// 7) format and send
-			const dataToSend: SignInResponse = {
-				access_token: accessTokenData.token,
-				...accessTokenData.payload
-			};
-
-			res.send(dataToSend);
-		});
+		// 5) produce tokens for user
+		const { accessTokenData } = user.initUserTokens();
+		// 6) save token data to database
+		await user.storeUserTokens(req);
+		// 7) set access token payload in the cache
+		await user.cacheUserTokens();
+		// 8) set refresh token in a cookie
+		user.setUserRefreshTokenCookie(res);
+		// 9) format and send
+		const dataToSend: SignInResponse = {
+			access_token: accessTokenData.token,
+			...accessTokenData.payload
+		};
+		res.send(dataToSend);
 	}
 );
 

@@ -6,12 +6,33 @@ export interface RequestWithIpInfo extends Request {
 
 export interface UserRecord {
 	_id: string;
+	google_id: string | null;
 	first_name: string;
 	last_name: string;
 	password: string;
 	email: string;
 	email_confirmed: boolean;
 	access_level: string;
+}
+
+export interface NewUserFields {
+	google_id?: string;
+	first_name: string;
+	last_name: string;
+	password: string;
+	email: string;
+	email_confirmed?: boolean;
+	access_level?: string;
+}
+
+export interface UpdateUserFields {
+	google_id?: string;
+	first_name?: string;
+	last_name?: string;
+	password?: string;
+	email?: string;
+	email_confirmed?: boolean;
+	access_level?: string;
 }
 
 export interface FetchUserError {
