@@ -37,7 +37,7 @@ export async function generateSystemAuthToken(): Promise<string> {
 	});
 }
 
-export function createTokenData(
+function createTokenData(
 	payload: AccessTokenPayload | RefreshTokenPayload,
 	expiresInSecs = 0
 ): TokenData {

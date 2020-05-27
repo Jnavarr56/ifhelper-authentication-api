@@ -65,18 +65,21 @@ class RedisCacheManager {
 		});
 	}
 
-	public deleteAllKeys(): Promise<void | RedisError> {
+	public deleteAllKeys(): Promise<void> {
 		return new Promise((resolve, reject) => {
 			this._client.keys(this._opts.prefix + "*", (err, rows) => {
-				this._client.del(
-					rows.map((row) => row.replace(this._opts.prefix, "")),
-					(cacheError, n) => {
-						if (cacheError) {
-							reject(cacheError);
+				if (err) reject(err);
+				if (rows.length > 0) {
+					this._client.del(
+						rows.map((row) => row.replace(this._opts.prefix, "")),
+						(err) => {
+							if (err) reject(err);
+							resolve();
 						}
-						resolve();
-					}
-				);
+					);
+				} else {
+					resolve();
+				}
 			});
 		});
 	}

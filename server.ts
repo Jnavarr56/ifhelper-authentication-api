@@ -107,7 +107,6 @@ app.post(
 				accessTokenData.payload,
 				accessTokenData.exp - accessTokenData.iat
 			);
-			// await cacheAccessToken(accessTokenData);
 
 			// 6) set refresh token in a cookie
 			res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshTokenData.token, {
@@ -152,7 +151,6 @@ app.get(
 		const cachedPayload: any = await AuthTokenCache.getKey(accessToken);
 		if (cachedPayload !== null) {
 			if (cachedPayload.access_type === "SYSTEM") {
-				// delete system tokens after use to avoid clogging memory
 				await AuthTokenCache.deleteKey(accessToken);
 			} else {
 				await validateRefreshTokenCookie(req, res, accessToken);
@@ -235,7 +233,6 @@ app.get(
 		// 5) generate tokens and issue a sign in response
 		user.initUserTokens().then(async ({ accessTokenData, refreshTokenData }) => {
 			// 4) save token data to database
-			console.log(user.getFields());
 			await TokenStore.create({
 				user_id: user.getFields()._id,
 				access_token: accessTokenData.token,
