@@ -1,7 +1,7 @@
-import { RefreshTokenData, RequestWithIpInfo } from "../types";
+import { RequestWithIpInfo } from "../types";
 import { Response } from "express";
 import { TokenStore } from "../db/models";
-const { REFRESH_TOKEN_COOKIE_NAME } = process.env;
+import { REFRESH_TOKEN_COOKIE_NAME } from "../vars";
 
 export function validateRefreshTokenCookie(
 	req: RequestWithIpInfo,
@@ -19,6 +19,7 @@ export function validateRefreshTokenCookie(
 
 				res.cookie(REFRESH_TOKEN_COOKIE_NAME, tokenStore.refresh_token, {
 					httpOnly: true,
+					path: "/",
 					expires: tokenStore.refresh_token_exp_date
 				});
 

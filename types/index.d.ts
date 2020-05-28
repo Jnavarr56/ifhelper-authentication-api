@@ -45,12 +45,40 @@ export interface RefreshTokenPayload {
 }
 
 export interface AccessTokenPayload {
-	access_type: string;
+	access_type: "USER";
 	authenticated_user: {
 		access_level: string;
 		_id: string;
 	};
 }
+
+export interface SystemAccessTokenPayload {
+	access_type: "SYSTEM";
+	authenticated_user?: {
+		_id: string;
+	};
+}
+
+export type CachedPayload = AccessTokenPayload | SystemAccessTokenPayload;
+export type AuthorizationResponse =
+	| AccessTokenPayload
+	| SystemAccessTokenPayload;
+
+export interface DecodedAccessTokenPayload extends AccessTokenPayload {
+	exp: number;
+	iat: number;
+}
+
+export interface DecodedSystemAccessTokenPayload
+	extends SystemAccessTokenPayload {
+	exp: number;
+	iat: number;
+}
+
+export type DecodedPayload =
+	| DecodedAccessTokenPayload
+	| DecodedSystemAccessTokenPayload;
+
 export interface TokenDataOpts {
 	accessTokenExpiresInSecs?: number;
 	refreshTokenExpiresInSecs?: number;

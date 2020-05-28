@@ -1,6 +1,4 @@
 import jwt from "jsonwebtoken";
-import cryptoRandomString from "crypto-random-string";
-import RedisCacheManager from "./RedisCacheManager";
 import {
 	UserRecord,
 	AccessTokenPayload,
@@ -11,31 +9,9 @@ import {
 	TokenDataPair,
 	TokenDataOpts
 } from "../types/index";
-import { TokenStore } from "../db/models";
 require("dotenv").config();
 
-const { JWT_SECRET_KEY, REDIS_PORT, REDIS_URL } = process.env;
-
-const AuthTokenCache = new RedisCacheManager({
-	port: parseInt(REDIS_PORT) || 6379,
-	url: REDIS_URL,
-	prefix: "AUTHENTICATION_TOKENS"
-});
-
-const TokenBlacklistCache = new RedisCacheManager({
-	port: parseInt(REDIS_PORT) || 6379,
-	url: REDIS_URL,
-	prefix: "AUTHENTICATION_TOKENS_BLACKLIST"
-});
-
-export async function generateSystemAuthToken(): Promise<string> {
-	const token: string = cryptoRandomString({ length: 10, type: "base64" });
-	const payload: any = { access_type: "SYSTEM" };
-
-	return new Promise((resolve) => {
-		AuthTokenCache.setKey(token, payload, 60 * 60).then(() => resolve(token));
-	});
-}
+const { JWT_SECRET_KEY } = process.env;
 
 function createTokenData(
 	payload: AccessTokenPayload | RefreshTokenPayload,
@@ -76,26 +52,4 @@ export function createUserTokenData(
 	);
 
 	return { accessTokenData, refreshTokenData };
-}
-
-export async function blacklistAllTokens(userID: string): Promise<void> {
-	const stores: any = await TokenStore.find({
-		user_id: userID,
-		access_token_exp_date: { $gte: new Date() }
-	});
-
-	const storeArr: Array<any> = Array.isArray(stores) ? stores : [stores];
-	// add access token in each tokenstore to the black list
-	for (const store of storeArr) {
-		const notYetBlacklisted: boolean = await TokenBlacklistCache.getKey(
-			store.access_token
-		).then((payload) => payload === null);
-
-		if (notYetBlacklisted) {
-			const ttl: number = Math.ceil(
-				(store.access_token_exp_date - store.createdAt) / 1000
-			);
-			await TokenBlacklistCache.setKey(store.access_token, {}, ttl);
-		}
-	}
 }

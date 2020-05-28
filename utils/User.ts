@@ -8,19 +8,12 @@ import {
 import { createUserTokenData } from "./tokens";
 import bcrypt from "bcrypt";
 import axios, { AxiosResponse, AxiosRequestConfig } from "axios";
-import { generateSystemAuthToken } from "./tokens";
 import { Response } from "express";
 import { TokenStore } from "../db/models";
-import RedisCacheManager from "./RedisCacheManager";
+import { AuthTokenCacheManager } from "./RedisCacheManager";
+import { REFRESH_TOKEN_COOKIE_NAME, USERS_API } from "../vars";
 
 require("dotenv").config();
-
-const {
-	USERS_API = "http://server/api/users",
-	REDIS_PORT,
-	REDIS_URL,
-	REFRESH_TOKEN_COOKIE_NAME
-} = process.env;
 
 interface ArrayFetchResponse extends AxiosResponse {
 	data: {
@@ -50,11 +43,7 @@ interface AuthorizedConfig extends AxiosRequestConfig {
 	};
 }
 
-const AuthTokenCache: RedisCacheManager = new RedisCacheManager({
-	port: parseInt(REDIS_PORT) || 6379,
-	url: REDIS_URL,
-	prefix: "AUTHENTICATION_TOKENS"
-});
+const AuthTokenCache: AuthTokenCacheManager = new AuthTokenCacheManager();
 
 class User {
 	private _user: UserRecord;
@@ -82,7 +71,9 @@ class User {
 
 	private async _generateAuthorizedConfig(): Promise<AuthorizedConfig> {
 		const config: AuthorizedConfig = {
-			headers: { Authorization: `Bearer ${await generateSystemAuthToken()}` }
+			headers: {
+				Authorization: `Bearer ${await AuthTokenCache.generateSystemAuthToken()}`
+			}
 		};
 
 		return config;
@@ -226,8 +217,8 @@ class User {
 		const { refreshTokenData } = this._tokens;
 		res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshTokenData.token, {
 			httpOnly: true,
-			expires: refreshTokenData.expDate,
-			sameSite: true
+			path: "/",
+			expires: refreshTokenData.expDate
 		});
 	}
 }
