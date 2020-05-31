@@ -5,23 +5,17 @@
 	"main": "server.js",
 	"scripts": {
 		"test": "echo \"Error: no test specified\" && exit 1",
-		"pretty": "prettier --write",
-		"lint": "eslint . --ext",
+		"pretty": "prettier --write .",
+		"lint": "eslint . --ext .ts",
 		"lint-and-fix": "eslint . --ext .ts --fix",
 		"prettier-format": "prettier --config .prettierrc 'src/**/*.ts' --write",
 		"dev": "nodemon",
 		"build": "rimraf ./build && tsc",
 		"start": "npm run build && node build/index.js"
 	},
-	"lint-staged": {
-		"src/**/*.ts": [
-			"lint",
-			"pretty"
-		]
-	},
 	"husky": {
 		"hooks": {
-			"pre-commit": "lint-staged"
+			"pre-commit": "npm run prettier-format && npm run lint"
 		}
 	},
 	"keywords": [],
