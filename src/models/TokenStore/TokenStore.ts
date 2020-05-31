@@ -15,6 +15,7 @@ const TokenStoreSchema = new Schema(
 			type: Date,
 			required: true
 		},
+
 		refresh_token: {
 			type: String,
 			required: true
