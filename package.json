@@ -16,7 +16,7 @@
 	"lint-staged": {
 		"src/**/*.*{ts}": [
 			"lint-and-fix",
-			"prettier-format"
+			"prettier"
 		]
 	},
 	"husky": {
