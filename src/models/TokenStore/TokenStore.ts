@@ -1,10 +1,10 @@
-import { Schema, model } from "mongoose";
+import { Schema, model } from 'mongoose';
 
 const TokenStoreSchema = new Schema(
 	{
 		user_id: {
 			type: Schema.Types.ObjectId,
-			ref: "User",
+			ref: 'User',
 			required: true
 		},
 		access_token: {
@@ -23,6 +23,14 @@ const TokenStoreSchema = new Schema(
 			type: Date,
 			required: true
 		},
+		revoked: {
+			type: Boolean,
+			default: false
+		},
+		revoked_at: {
+			type: Date,
+			default: null
+		},
 		requester_data: {
 			type: Schema.Types.Mixed,
 			default: null
@@ -31,4 +39,4 @@ const TokenStoreSchema = new Schema(
 	{ timestamps: true }
 );
 
-export default model("TokenStore", TokenStoreSchema, "TokenStore");
+export default model('TokenStore', TokenStoreSchema, 'TokenStore');
