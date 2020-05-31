@@ -5,8 +5,8 @@
 	"main": "server.js",
 	"scripts": {
 		"test": "echo \"Error: no test specified\" && exit 1",
-		"pretty": "prettier --write .",
-		"lint": "eslint . --ext .ts",
+		"pretty": "prettier --write",
+		"lint": "eslint . --ext",
 		"lint-and-fix": "eslint . --ext .ts --fix",
 		"prettier-format": "prettier --config .prettierrc 'src/**/*.ts' --write",
 		"dev": "nodemon",
@@ -14,9 +14,9 @@
 		"start": "npm run build && node build/index.js"
 	},
 	"lint-staged": {
-		"src/**/*.*{ts}": [
-			"lint-and-fix",
-			"prettier"
+		"src/**/*.ts": [
+			"lint",
+			"pretty"
 		]
 	},
 	"husky": {
