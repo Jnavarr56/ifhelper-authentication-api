@@ -3,12 +3,7 @@ import * as dotenv from 'dotenv';
 import jwt, { TokenExpiredError } from 'jsonwebtoken';
 
 import { RefreshResponse } from '../types/Response';
-import {
-	TokenDataPair,
-	AccessTokenData,
-	RefreshTokenData,
-	NewTokenStoreFields
-} from '../types/Token';
+import { TokenDataPair, AccessTokenData } from '../types/Token';
 
 import TokenStore from '../models/TokenStore';
 import User from '../util/User';
