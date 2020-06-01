@@ -34,7 +34,7 @@ export default class TokenBlacklist extends RedisCacheManager {
 			const isBlacklisted: boolean = await this.isBlacklisted(store.access_token);
 
 			if (!isBlacklisted) {
-				const createdDate: Date = store.createdAt;
+				const createdDate: Date = store.created_at;
 				const expDate: Date = store.access_token_exp_date;
 				const ms: number = createdDate.getTime() - expDate.getTime();
 				const ttlSecs: number = Math.ceil(ms / 1000);

@@ -24,7 +24,6 @@ import { AuthorizedConfig } from '../types';
 
 import AuthTokenManager from './AuthTokenCache';
 import { createAccessTokenData, createRefreshTokenData } from './tokens';
-
 import TokenStore from '../models/TokenStore';
 
 import {

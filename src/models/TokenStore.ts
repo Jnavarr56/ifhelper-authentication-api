@@ -36,7 +36,12 @@ const TokenStoreSchema = new Schema(
 			default: null
 		}
 	},
-	{ timestamps: true }
+	{
+		timestamps: {
+			createdAt: 'created_at',
+			updatedAt: 'updated_at'
+		}
+	}
 );
 
 export default model('TokenStore', TokenStoreSchema, 'TokenStore');
