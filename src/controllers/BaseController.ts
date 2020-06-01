@@ -71,6 +71,14 @@ export default abstract class BaseController {
 		);
 	}
 
+	public invalidToken(res: e.Response, errorCode?: string): void {
+		BaseController.jsonErrorResponse(res, 400, errorCode || 'Token Invalid');
+	}
+
+	public expiredToken(res: e.Response, errorCode?: string): void {
+		BaseController.jsonErrorResponse(res, 400, errorCode || 'Token Expired');
+	}
+
 	public missingParams(res: e.Response, param: string): void;
 	public missingParams(res: e.Response, params: string[]): void;
 	public missingParams(res: e.Response, p: string | string[]): void {

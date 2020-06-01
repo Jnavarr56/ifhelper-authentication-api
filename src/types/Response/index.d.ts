@@ -16,3 +16,5 @@ export interface GoogleSignInResponse {
 export type AuthorizationResponse =
 	| AccessTokenPayload
 	| SystemAccessTokenPayload;
+
+export type RefreshResponse = SignInResponse;

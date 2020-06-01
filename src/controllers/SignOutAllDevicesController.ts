@@ -2,7 +2,6 @@ import * as e from 'express';
 import * as dotenv from 'dotenv';
 import jwt, { TokenExpiredError } from 'jsonwebtoken';
 import BaseController from './BaseController';
-import { AuthorizationResponse } from '../types/Response';
 import {
 	AccessTokenPayload,
 	SystemAccessTokenPayload,
@@ -18,7 +17,7 @@ const JWT_SECRET_KEY: string | undefined = process.env.JWT_SECRET_KEY;
 const authTokenCache: AuthTokenCache = new AuthTokenCache();
 const tokenBlacklist: TokenBlacklist = new TokenBlacklist();
 
-export default class AuthorizeController extends BaseController {
+export default class SignOutAllDevicesController extends BaseController {
 	protected async executeImpl(req: e.Request, res: e.Response): Promise<void> {
 		// 1) make sure token is present in request.
 		const accessToken: string | undefined = req.token;
@@ -32,18 +31,25 @@ export default class AuthorizeController extends BaseController {
 			return this.invalidToken(res);
 		}
 
-		// 4) Check for a cached token payload and return if it exists.
+		// 3) Check for a cached token payload.
 		const cachedPayload:
 			| AccessTokenPayload
 			| SystemAccessTokenPayload
 			| null = await authTokenCache.getCachedPayload(accessToken);
 
+		// 4) If in cache then is valid, blacklist this token.
 		if (cachedPayload !== null) {
-			const response: AuthorizationResponse = cachedPayload;
-			return this.ok(res, response);
+			// must have authenticated user data in payload
+			if (!cachedPayload.authenticated_user) {
+				return this.invalidToken(res);
+			}
+
+			const userID: string = cachedPayload.authenticated_user._id;
+			await tokenBlacklist.blacklistAllUserTokens(userID);
+			return this.ok(res);
 		}
 
-		// 5) if not cached then decoded manually.
+		// 4) If not in cache, decode manually.
 		if (typeof JWT_SECRET_KEY !== 'string')
 			throw new Error('Invalid JWT Secret Key');
 
@@ -61,16 +67,11 @@ export default class AuthorizeController extends BaseController {
 				}
 
 				const decodedPayload: DecodedAccessTokenPayload = decodedToken;
-				const { exp, iat, ...payload } = decodedPayload;
 
-				// 7) calculate remaining lifespan.
-				const ttl: number = exp - iat;
-				await authTokenCache.cacheToken(accessToken, payload, ttl);
-
-				// 8) send back access token payload.
-				const accessTokenPayload: AccessTokenPayload = { ...payload };
-				const response: AuthorizationResponse = accessTokenPayload;
-				this.ok(res, response);
+				// 7) blacklist token for remaining life span
+				const userID: string = decodedPayload.authenticated_user._id;
+				await tokenBlacklist.blacklistAllUserTokens(userID);
+				return this.ok(res);
 			}
 		);
 	}

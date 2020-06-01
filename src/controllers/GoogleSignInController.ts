@@ -11,7 +11,7 @@ dotenv.config();
 
 const oauth2Client: OAuth2Client = new google.auth.OAuth2(
 	process.env.GOOGLE_OAUTH_CLIENT_ID,
-	process.env.GOOGLE_OAUTH_REDIRECT_URL,
+	process.env.GOOGLE_OAUTH_SECRET,
 	process.env.GOOGLE_OAUTH_REDIRECT_URL
 );
 

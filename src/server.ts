@@ -345,7 +345,7 @@ const { MONGO_DB_URL } = process.env;
 
 const redisClient: RedisClient = new RedisSingleton().getInstance();
 
-redisClient.on('connect', (): void => {
+redisClient.on('connect', () => {
 	const dbURL = `${MONGO_DB_URL}/authentication-api?retryWrites=true&w=majority`;
 	const dbOptions: ConnectionOptions = {
 		useNewUrlParser: true,
@@ -355,12 +355,14 @@ redisClient.on('connect', (): void => {
 
 	mongoose
 		.connect(dbURL, dbOptions)
-		.then((): void => {
+		.then(() => {
 			app.listen(PORT, () => {
-				console.log(`Authentication API running on PORT ${PORT}!`);
+				console.log(
+					`Authentication API running on ${PORT} of http://authentication-api!`
+				);
 			});
 		})
-		.catch((error: Error): void => {
+		.catch((error: Error) => {
 			console.trace(error);
 			process.exit(1);
 		});

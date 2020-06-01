@@ -16,7 +16,8 @@ export default class TokenBlacklist extends RedisCacheManager {
 		);
 	}
 
-	public blacklistToken(token: string, secs: number): Promise<void> {
+	public async blacklistToken(token: string, secs: number): Promise<void> {
+		await TokenStore.findOneAndUpdate({ access_token: token }, { revoked: true });
 		return this.setKey(token, {}, secs);
 	}
 

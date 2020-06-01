@@ -1,3 +1,8 @@
+import e from 'express';
+import * as dotenv from 'dotenv';
+import bcrypt from 'bcrypt';
+import axios, { AxiosError } from 'axios';
+
 import {
 	UserRecord,
 	UserUpdateFields,
@@ -7,24 +12,40 @@ import {
 	ArrayFetchResponse,
 	ItemFetchResponse
 } from '../types/User';
+import {
+	NewTokenStoreFields,
+	RefreshTokenData,
+	AccessTokenData,
+	TokenDataPair,
+	AccessTokenPayload,
+	RefreshTokenPayload
+} from '../types/Token';
 import { AuthorizedConfig } from '../types';
-import bcrypt from 'bcrypt';
-import axios, { AxiosError } from 'axios';
-import { USERS_API } from '../vars';
-import AuthTokenManager from './AuthTokenCache';
 
-require('dotenv').config();
+import AuthTokenManager from './AuthTokenCache';
+import { createAccessTokenData, createRefreshTokenData } from './tokens';
+
+import TokenStore from '../models/TokenStore';
+
+import {
+	USERS_API,
+	REFRESH_TOKEN_COOKIE_NAME,
+	ACCESS_TOKEN_LIFE_SECS,
+	REFRESH_TOKEN_LIFE_SECS
+} from '../vars';
+
+dotenv.config();
 
 export default class User {
 	private user: UserRecord | null = null;
-	private static authTokenManager: AuthTokenManager = new AuthTokenManager();
+	private static authTokenCache: AuthTokenManager = new AuthTokenManager();
 
 	public exists(): boolean {
 		return this.user !== null;
 	}
 
 	private async generateAuthorizedConfig(): Promise<AuthorizedConfig> {
-		const token = await User.authTokenManager.generateSystemAuthToken();
+		const token = await User.authTokenCache.generateSystemAuthToken();
 		const config: AuthorizedConfig = {
 			headers: { Authorization: `Bearer ${token}` }
 		};
@@ -109,5 +130,64 @@ export default class User {
 	public getFields(): UserRecord {
 		if (!this.user) throw new Error('User Not Initialized');
 		return this.user;
+	}
+
+	public async generateUserTokenData(
+		req: e.Request,
+		res: e.Response
+	): Promise<TokenDataPair> {
+		if (!this.user) throw new Error('User Not Initialized');
+
+		const accessTokenPayload: AccessTokenPayload = {
+			access_type: 'USER',
+			authenticated_user: {
+				access_level: this.user.access_level,
+				_id: this.user._id
+			}
+		};
+
+		const accessTokenData: AccessTokenData = createAccessTokenData(
+			accessTokenPayload,
+			ACCESS_TOKEN_LIFE_SECS
+		);
+
+		const refreshTokenPayload: RefreshTokenPayload = {
+			_id: this.user._id
+		};
+		const refreshTokenData: RefreshTokenData = createRefreshTokenData(
+			refreshTokenPayload,
+			REFRESH_TOKEN_LIFE_SECS
+		);
+
+		await User.authTokenCache.cacheToken(
+			accessTokenData.token,
+			accessTokenData.payload,
+			accessTokenData.exp - accessTokenData.iat
+		);
+
+		// 10) save token data to db
+		const tokenStoreData: NewTokenStoreFields = {
+			user_id: this.user._id,
+			access_token: accessTokenData.token,
+			refresh_token: refreshTokenData.token,
+			access_token_exp_date: accessTokenData.expDate,
+			refresh_token_exp_date: refreshTokenData.expDate,
+			requester_data: req.useragent
+		};
+
+		await TokenStore.create(tokenStoreData);
+
+		//11) set refresh token in cache.
+		res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshTokenData.token, {
+			httpOnly: true,
+			path: '/',
+			expires: refreshTokenData.expDate
+		});
+
+		const tokenDataPair: TokenDataPair = {
+			accessTokenData,
+			refreshTokenData
+		};
+		return tokenDataPair;
 	}
 }

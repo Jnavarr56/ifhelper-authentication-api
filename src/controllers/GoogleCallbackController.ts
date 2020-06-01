@@ -8,12 +8,7 @@ import {
 } from 'google-auth-library/build/src/auth/oauth2client';
 
 import User from '../util/User';
-import {
-	TokenDataPair,
-	AccessTokenData,
-	RefreshTokenData,
-	NewTokenStoreFields
-} from '../types/Token';
+import { TokenDataPair, AccessTokenData } from '../types/Token';
 import {
 	UserRecord,
 	UserUpdateFields,
@@ -23,19 +18,14 @@ import {
 import { SignInResponse } from '../types/Response';
 
 import BaseController from './BaseController';
-import AuthTokenCache from '../util/AuthTokenCache';
-import { generateUserTokenData } from '../util/tokens';
-import TokenStore from '../models/TokenStore';
 
 dotenv.config();
 
 const oauth2Client: OAuth2Client = new google.auth.OAuth2(
 	process.env.GOOGLE_OAUTH_CLIENT_ID,
-	process.env.GOOGLE_OAUTH_REDIRECT_URL,
+	process.env.GOOGLE_OAUTH_SECRET,
 	process.env.GOOGLE_OAUTH_REDIRECT_URL
 );
-
-const authTokenCache = new AuthTokenCache();
 
 export default class GoogleCallbackController extends BaseController {
 	protected async executeImpl(req: e.Request, res: e.Response): Promise<void> {
@@ -50,11 +40,11 @@ export default class GoogleCallbackController extends BaseController {
 		// 2) exchange authorization code for tokens.
 		const tokens: Credentials = await oauth2Client.getToken(authCode).then(
 			(response: GetTokenResponse): Credentials => {
+				console.log('hi');
 				const tokens: Credentials = response.tokens;
 				return tokens;
 			}
 		);
-
 		// 3) use tokens as credentials to initialize an authorized api client.
 		const authorizedClient: OAuth2Client = new google.auth.OAuth2();
 		authorizedClient.setCredentials(tokens);
@@ -128,36 +118,18 @@ export default class GoogleCallbackController extends BaseController {
 			await user.create(newUserData);
 		}
 
-		// 8) initialize user tokens
-		const userTokenData: TokenDataPair = generateUserTokenData(user.getFields());
-		const accessTokenData: AccessTokenData = userTokenData.accessTokenData;
-		const refreshTokenData: RefreshTokenData = userTokenData.refreshTokenData;
-
-		// 9) cache user token data
-		await authTokenCache.cacheToken(
-			accessTokenData.token,
-			accessTokenData.payload,
-			accessTokenData.exp - accessTokenData.iat
+		// 8) initialize user tokens and persist
+		const userTokenData: TokenDataPair = await user.generateUserTokenData(
+			req,
+			res
 		);
+		const accessTokenData: AccessTokenData = userTokenData.accessTokenData;
 
-		// 10) save token data to db
-		const tokenStoreData: NewTokenStoreFields = {
-			user_id: user.getFields()._id,
-			access_token: accessTokenData.token,
-			refresh_token: refreshTokenData.token,
-			access_token_exp_date: accessTokenData.expDate,
-			refresh_token_exp_date: refreshTokenData.expDate,
-			requester_data: req.useragent
-		};
-
-		await TokenStore.create(tokenStoreData);
-
-		// 11) format at send
+		// 9) format and send
 		const response: SignInResponse = {
 			access_token: accessTokenData.token,
 			...accessTokenData.payload
 		};
-
 		this.ok(res, response);
 	}
 }

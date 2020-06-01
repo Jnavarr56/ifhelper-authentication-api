@@ -42,7 +42,7 @@ export default class RedisCacheManager {
 		});
 	}
 
-	protected getTTL(key: string): Promise<number> {
+	public getTTL(key: string): Promise<number> {
 		return new Promise((resolve, reject) => {
 			this.client.ttl(this.prefixKey(key), (error: Error | null, secs: number) => {
 				if (error) reject(error);

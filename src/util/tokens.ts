@@ -1,16 +1,15 @@
+import jwt from 'jsonwebtoken';
+import * as dotenv from 'dotenv';
+
 import {
 	AccessTokenData,
 	AccessTokenPayload,
 	DecodedAccessTokenPayload,
 	RefreshTokenPayload,
 	DecodedRefreshTokenPayload,
-	RefreshTokenData,
-	TokenDataPair
+	RefreshTokenData
 } from '../types/Token';
-import jwt from 'jsonwebtoken';
-import * as dotenv from 'dotenv';
-import { UserRecord } from '../types/User';
-import { ACCESS_TOKEN_LIFE_SECS, REFRESH_TOKEN_LIFE_SECS } from '../vars';
+
 dotenv.config();
 
 const JWT_SECRET_KEY: string | undefined = process.env.JWT_SECRET_KEY;
@@ -63,30 +62,4 @@ export function createRefreshTokenData(
 	};
 
 	return tokenData;
-}
-
-export function generateUserTokenData(userRecord: UserRecord): TokenDataPair {
-	const accessTokenPayload: AccessTokenPayload = {
-		access_type: 'USER',
-		authenticated_user: {
-			access_level: userRecord.access_level,
-			_id: userRecord._id
-		}
-	};
-
-	const accessTokenData: AccessTokenData = createAccessTokenData(
-		accessTokenPayload,
-		ACCESS_TOKEN_LIFE_SECS
-	);
-
-	const refreshTokenPayload: RefreshTokenPayload = {
-		_id: userRecord._id
-	};
-	const refreshTokenData: RefreshTokenData = createRefreshTokenData(
-		refreshTokenPayload,
-		REFRESH_TOKEN_LIFE_SECS
-	);
-
-	const tokenDataPair: TokenDataPair = { accessTokenData, refreshTokenData };
-	return tokenDataPair;
 }
