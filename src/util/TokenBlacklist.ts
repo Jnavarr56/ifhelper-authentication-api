@@ -17,7 +17,10 @@ export default class TokenBlacklist extends RedisCacheManager {
 	}
 
 	public async blacklistToken(token: string, secs: number): Promise<void> {
-		await TokenStore.findOneAndUpdate({ access_token: token }, { revoked: true });
+		await TokenStore.findOneAndUpdate(
+			{ access_token: token },
+			{ revoked: true, revoked_at: new Date() }
+		);
 		return this.setKey(token, {}, secs);
 	}
 
@@ -31,19 +34,11 @@ export default class TokenBlacklist extends RedisCacheManager {
 		const storeArr: Array<any> = Array.isArray(stores) ? stores : [stores];
 
 		for (const store of storeArr) {
-			const isBlacklisted: boolean = await this.isBlacklisted(store.access_token);
-
-			if (!isBlacklisted) {
-				const createdDate: Date = store.created_at;
-				const expDate: Date = store.access_token_exp_date;
-				const ms: number = createdDate.getTime() - expDate.getTime();
-				const ttlSecs: number = Math.ceil(ms / 1000);
-				await this.blacklistToken(store.access_token, ttlSecs);
-				await store.update({
-					revoked: true,
-					revoked_at: new Date()
-				});
-			}
+			const createdDate: Date = store.created_at;
+			const expDate: Date = store.access_token_exp_date;
+			const ms: number = createdDate.getTime() - expDate.getTime();
+			const ttlSecs: number = Math.ceil(ms / 1000);
+			await this.blacklistToken(store.access_token, ttlSecs);
 		}
 	}
 }

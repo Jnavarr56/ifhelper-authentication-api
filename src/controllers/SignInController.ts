@@ -20,10 +20,10 @@ export default class SignInController extends BaseController {
 
 		// 3) if user does not exist or password is wrong then reject.
 		if (!user.exists() || !(await user.hasPassword(password))) {
-			return this.unauthorized(res, 'Email/Password Combination Not Recognized');
+			return this.unauthorized(res);
 		} else if (!user.confirmedEmail()) {
 			// 3) if user exists but never confirmed email then reject.
-			return this.unauthorized(res, 'Email Not Confirmed');
+			return this.forbidden(res);
 		}
 
 		// 4) initialize user tokens and persist

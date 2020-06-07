@@ -1,5 +1,4 @@
 import e from 'express';
-import * as dotenv from 'dotenv';
 import bcrypt from 'bcrypt';
 import axios, { AxiosError } from 'axios';
 
@@ -32,8 +31,6 @@ import {
 	ACCESS_TOKEN_LIFE_SECS,
 	REFRESH_TOKEN_LIFE_SECS
 } from '../vars';
-
-dotenv.config();
 
 export default class User {
 	private user: UserRecord | null = null;

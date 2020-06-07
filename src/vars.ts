@@ -1,7 +1,7 @@
 export const PORT = 80;
 export const REDIS_PORT = 6379;
-export const REDIS_URL = 'redis://redis-auth';
-export const RABBIT_MQ_URL = 'amqp://rabbitmq-auth';
+export const REDIS_URL = 'redis://authentication-api-cache';
+export const RABBIT_MQ_URL = 'amqp://messenger';
 export const AUTHORIZATION_QUEUE_NAME = 'AUTHORIZATION_QUEUE';
 export const PATHNAME = '/api/authentication';
 export const USERS_API = 'http://users-api/api/users';

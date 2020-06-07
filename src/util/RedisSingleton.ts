@@ -1,5 +1,8 @@
+import * as dotenv from 'dotenv';
 import redis, { RedisClient } from 'redis';
 import { REDIS_PORT, REDIS_URL } from '../vars';
+
+dotenv.config();
 
 export default class RedisClientSingleton {
 	private static instance: RedisClient | null = null;
@@ -16,7 +19,8 @@ export default class RedisClientSingleton {
 		if (!RedisClientSingleton.instance) {
 			RedisClientSingleton.instance = redis.createClient({
 				port: REDIS_PORT,
-				url: REDIS_URL
+				url: REDIS_URL,
+				password: process.env.AUTH_CACHE_PASSWORD
 			});
 		}
 	}
